@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/10/nuspec.xsd">
   <metadata>
     <id>AssetRipper.Bindings.MacOS</id>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <authors>AssetRipper</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <readme>README.md</readme>
@@ -11,9 +11,6 @@
     <projectUrl>https://github.com/AssetRipper/AssetRipper.Bindings.MacOS</projectUrl>
     <description>Portable MacOS system bindings.</description>
     <tags>macos wrapper</tags>
-    <packageTypes>
-      <packageType name="DotnetPlatform" />
-    </packageTypes>
     <dependencies>
       <group targetFramework="net9.0" />
     </dependencies>
