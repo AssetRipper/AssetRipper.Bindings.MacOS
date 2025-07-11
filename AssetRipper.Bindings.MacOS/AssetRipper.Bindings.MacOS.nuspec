@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/10/nuspec.xsd">
   <metadata>
     <id>AssetRipper.Bindings.MacOS</id>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <authors>AssetRipper</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <readme>README.md</readme>

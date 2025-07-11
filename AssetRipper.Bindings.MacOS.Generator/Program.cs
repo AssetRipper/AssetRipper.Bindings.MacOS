@@ -1,4 +1,8 @@
-﻿namespace AssetRipper.Bindings.MacOS.Generator;
+﻿using AsmResolver.DotNet;
+using SharpCompress.Archives.Zip;
+using System.Diagnostics;
+
+namespace AssetRipper.Bindings.MacOS.Generator;
 
 internal static class Program
 {
@@ -37,21 +41,47 @@ internal static class Program
 			Console.WriteLine("The managed libraries of the two packages do not match, but that's okay.");
 		}
 
+		// License
 		File.WriteAllBytes(Path.Combine(outputDirectory, NuGetPackageContents.LicensePath), arm64Contents.License);
+
+		// Managed library
 		Directory.CreateDirectory(Path.Combine(outputDirectory, $"lib/{DotNetVersion}"));
-		File.WriteAllBytes(Path.Combine(outputDirectory, $"lib/{DotNetVersion}/Microsoft.macOS.dll"), arm64Contents.ManagedLibrary);
-		foreach ((string relativePath, byte[] data) in arm64Contents.NativeLibraries)
+		ConvertManagedLibrary(arm64Contents.ManagedLibrary).Write(Path.Combine(outputDirectory, $"lib/{DotNetVersion}/Microsoft.macOS.dll"));
+
+		// Arm64 native library
+		Directory.CreateDirectory(Path.Combine(outputDirectory, "runtimes/osx-arm64/native"));
+		File.WriteAllBytes(Path.Combine(outputDirectory, "runtimes/osx-arm64/native/libxamarin-dotnet-coreclr.dylib"), arm64Contents.NativeLibrary);
+
+		// X64 native library
+		Directory.CreateDirectory(Path.Combine(outputDirectory, "runtimes/osx-x64/native"));
+		File.WriteAllBytes(Path.Combine(outputDirectory, "runtimes/osx-x64/native/libxamarin-dotnet-coreclr.dylib"), x64Contents.NativeLibrary);
+	}
+
+	private static ModuleDefinition ConvertManagedLibrary(byte[] managedLibraryData)
+	{
+		const string OriginalName = "__Internal";
+		const string NewName = "libxamarin-dotnet-coreclr";
+
+		// There's two things we need to change in the managed library:
+		// 1. References to __Internal need to be changed to libxamarin-dotnet-coreclr.
+		// 2. Symbol names in the managed library are slightly different from the native library.
+		//    They start with "xamarin_" instead of "_xamarin_", so we prefix them with an underscore.
+
+		ModuleDefinition module = ModuleDefinition.FromBytes(managedLibraryData);
+
+		foreach (MethodDefinition method in module.GetAllTypes().SelectMany(type => type.Methods))
 		{
-			string fullPath = Path.Combine(outputDirectory, relativePath);
-			Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-			File.WriteAllBytes(fullPath, data);
+			if (method.ImplementationMap?.Scope?.Name?.Value is OriginalName)
+			{
+				Debug.Assert(method.ImplementationMap.Name is not null);
+				Debug.Assert(method.ImplementationMap.Name.Value.StartsWith("xamarin_", StringComparison.Ordinal));
+				method.ImplementationMap.Name = '_' + method.ImplementationMap.Name.Value;
+			}
 		}
-		foreach ((string relativePath, byte[] data) in x64Contents.NativeLibraries)
-		{
-			string fullPath = Path.Combine(outputDirectory, relativePath);
-			Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-			File.WriteAllBytes(fullPath, data);
-		}
+
+		module.ModuleReferences.Single(r => r.Name == OriginalName).Name = NewName;
+
+		return module;
 	}
 
 	private static async Task<MemoryStream> Download(HttpClient client, string link)
@@ -71,30 +101,30 @@ internal static class Program
 		return client;
 	}
 
-	private readonly record struct NuGetPackageContents(byte[] License, byte[] ManagedLibrary, List<(string, byte[])> NativeLibraries)
+	private readonly record struct NuGetPackageContents(byte[] License, byte[] ManagedLibrary, byte[] NativeLibrary)
 	{
 		public const string LicensePath = "LICENSE";
 		public static string GetManagedLibraryPath(string runtime)
 		{
 			return $"runtimes/{runtime}/lib/{DotNetVersion}/Microsoft.macOS.dll";
 		}
-		public static string GetNativeLibraryDirectory(string runtime)
+		public static string GetNativeLibraryPath(string runtime)
 		{
-			return $"runtimes/{runtime}/native/";
+			return $"runtimes/{runtime}/native/libxamarin-dotnet-coreclr.dylib";
 		}
 
 		public static NuGetPackageContents Read(Stream compressedStream, string runtime)
 		{
-			var archive = SharpCompress.Archives.Zip.ZipArchive.Open(compressedStream);
+			ZipArchive archive = ZipArchive.Open(compressedStream);
 
 			byte[] license = [];
 			byte[] managedLibrary = [];
-			List<(string, byte[])> nativeLibraries = new();
+			byte[] nativeLibrary = [];
 
 			string managedLibraryPath = GetManagedLibraryPath(runtime);
-			string nativeLibraryDirectory = GetNativeLibraryDirectory(runtime);
+			string nativeLibraryPath = GetNativeLibraryPath(runtime);
 
-			foreach (var entry in archive.Entries)
+			foreach (ZipArchiveEntry entry in archive.Entries)
 			{
 				if (entry.IsDirectory)
 				{
@@ -119,16 +149,15 @@ internal static class Program
 					managedLibrary = new byte[entry.Size];
 					stream.ReadExactly(managedLibrary, 0, managedLibrary.Length);
 				}
-				else if (entryPath.StartsWith(nativeLibraryDirectory, StringComparison.Ordinal))
+				else if (entryPath == nativeLibraryPath)
 				{
 					using Stream stream = entry.OpenEntryStream();
-					byte[] data = new byte[entry.Size];
-					stream.ReadExactly(data, 0, data.Length);
-					nativeLibraries.Add((entryPath, data));
+					nativeLibrary = new byte[entry.Size];
+					stream.ReadExactly(nativeLibrary, 0, nativeLibrary.Length);
 				}
 			}
 
-			return new(license, managedLibrary, nativeLibraries);
+			return new(license, managedLibrary, nativeLibrary);
 		}
 
 		public static bool EqualLicenses(NuGetPackageContents left, NuGetPackageContents right)
