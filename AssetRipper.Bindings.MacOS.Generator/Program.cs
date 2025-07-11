@@ -69,7 +69,8 @@ internal static class Program
 
 		ModuleDefinition module = ModuleDefinition.FromBytes(managedLibraryData);
 
-		foreach (MethodDefinition method in module.GetAllTypes().SelectMany(type => type.Methods))
+		// Disabled for a test
+		/*foreach (MethodDefinition method in module.GetAllTypes().SelectMany(type => type.Methods))
 		{
 			if (method.ImplementationMap?.Scope?.Name?.Value is OriginalName)
 			{
@@ -77,7 +78,7 @@ internal static class Program
 				Debug.Assert(method.ImplementationMap.Name.Value.StartsWith("xamarin_", StringComparison.Ordinal));
 				method.ImplementationMap.Name = '_' + method.ImplementationMap.Name.Value;
 			}
-		}
+		}*/
 
 		module.ModuleReferences.Single(r => r.Name == OriginalName).Name = NewName;
 
